@@ -1,3 +1,7 @@
+# Build Files
+keyboard_firmware/build/
+
+
 # Prerequisites
 *.d
 
