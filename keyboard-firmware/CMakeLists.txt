@@ -11,7 +11,7 @@ add_executable(keeb_firmware
         )
 
 # pull in common dependencies
-target_link_libraries(keeb_firmware pico_stdlib)
+target_link_libraries(keeb_firmware pico_stdlib hardware_gpio hardware_pwm)
 
 #enable uart; disable usb (printf)
 #pico_enable_stdio_usb(keeb_firmware 1)
