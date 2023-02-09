@@ -1,5 +1,7 @@
 # Build Files
-keyboard-firmware/build/
+keyboard-firmware/build/*
+
+keyboard-firmware/pico_sdk_import.cmake
 
 # Prerequisites
 *.d

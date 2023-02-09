@@ -19,7 +19,7 @@ const short led_clk = 27;
 const short led[LEDNUM] = {
 	7,	//LED_R
 	6,	//LED_G
-	28	//LED_B
+	5	//LED_B
 };
 //arrays to store led slices/channels
 short led_ch[LEDNUM];
@@ -63,6 +63,7 @@ void init_pins() {
 		gpio_set_function(led[i], GPIO_FUNC_PWM);
 		led_sl[i] = pwm_gpio_to_slice_num(led[i]);
 		led_ch[i] = pwm_gpio_to_channel(led[i]);
+		gpio_put(led[i], 1);
 	}
 
 	//Init switch pins
@@ -96,7 +97,7 @@ short *poll_sw(short *coords) {
 void main(void) {
 	stdio_init_all();
 	init_pins();
-	short pwm_wrap = 400;
+	int pwm_wrap = 65465;
 	float pwm_duty = 0.25;
 	//declare array & allocate space
 	short *coords = malloc(SW_L * 2 * sizeof(short));
@@ -111,16 +112,18 @@ void main(void) {
 			}
 		}*/
 		printf("\n");
-		for (short i = 0; i < LEDNUM; i++) {
+		for (short i = 0; i < LEDNUM-1; i++) {
+			pwm_set_clkdiv(led_sl[i], 38.1875);
 			pwm_set_wrap (led_sl[i], pwm_wrap);
+			pwm_set_gpio_level(led[i], (int)((float)pwm_wrap*pwm_duty));
 			pwm_set_enabled(led_sl[i], true);
-			pwm_set_gpio_level(led[i], (int)(pwm_wrap*pwm_duty));
 			printf("%f\t", pwm_duty);
-			pwm_duty += 0.25;
+			//pwm_duty += 0.25;
 		}
 		printf("\n");
 		pwm_duty = 0.25;
 		//gpio_put(led_clk, 1);
+		gpio_put(led[2], 1);
 		gpio_put(LED_PIN, 1);
 		//for (int i = 0; i < LEDNUM; i++) gpio_put(led[i], 1);
 		sleep_ms(250);
