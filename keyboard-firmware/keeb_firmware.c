@@ -10,23 +10,29 @@
 #define LEDNUM 3
 #define SW_L 8
 
-const short LED_PIN = PICO_DEFAULT_LED_PIN;
+// PWM
+const int pwm_wrap = 65465;
+const float pwm_duty[3] = {0.25, 0.5, 0.75};
+
+
+// LED
+const char LED_PIN = PICO_DEFAULT_LED_PIN;
 
 //define led clock pin
-const short led_clk = 27;
+const char led_clk = 27;
 
 //define array of LED pins
-const short led[LEDNUM] = {
+const char led[LEDNUM] = {
 	7,	//LED_R
 	6,	//LED_G
 	5	//LED_B
 };
 //arrays to store led slices/channels
-short led_ch[LEDNUM];
-short led_sl[LEDNUM];
+char led_ch[LEDNUM];
+char led_sl[LEDNUM];
 
 //define pins used transmit (pico -> switch array)
-const short sw_out[SW_L] = {
+const char sw_out[SW_L] = {
 	8,	//Y0
 	9,	//Y1
 	10,	//Y2
@@ -38,7 +44,7 @@ const short sw_out[SW_L] = {
 };
 
 //define pins used to receive (switch array -> pico)
-const short sw_in[SW_L] = {
+const char sw_in[SW_L] = {
 	12,	//X0
 	13,	//X1
 	14,	//X2
@@ -56,81 +62,92 @@ void init_pins() {
 	//Init LED pins
 	gpio_init(led_clk);
 	gpio_set_dir(led_clk, GPIO_OUT);
-	for (short i = 0; i < LEDNUM; i++) {
-		gpio_init(led[i]);
-		gpio_set_dir(led[i], GPIO_OUT);
+	for (char i = 0; i < LEDNUM; i++) {
+		//gpio_init(led[i]);
+		//gpio_set_dir(led[i], GPIO_OUT);
 		//set pwm
 		gpio_set_function(led[i], GPIO_FUNC_PWM);
 		led_sl[i] = pwm_gpio_to_slice_num(led[i]);
 		led_ch[i] = pwm_gpio_to_channel(led[i]);
-		gpio_put(led[i], 1);
+		printf("Slice=%d\tChannel=%d\n", led_sl[i], led_ch[i]);
 	}
 
 	//Init switch pins
-	for (short i = 0; i < SW_L; i++) {
+	for (char i = 0; i < SW_L; i++) {
 		gpio_init(sw_out[i]);
 		gpio_init(sw_in[i]);
 		gpio_set_dir(sw_out[i], GPIO_OUT);
 		gpio_set_dir(sw_in[i], GPIO_IN);
+		gpio_put(sw_out[i], 1);
 	}
 }
 
-short *poll_sw(short *coords) {
-	short pIndex = 0;
-	short depCount = 0;
-	for (short i = 0; i < SW_L; i++) {
-		gpio_put(sw_out[i], 1);
-		for (short j = 0; j < SW_L; j++) {
-			if ( gpio_get(sw_in[j]) ) {
-				depCount++;
-				coords[pIndex]= j;		//X
-				coords[pIndex+SW_L] = i;	//Y
-				pIndex++;
-			}
-		}
+char *poll_sw(char *pinArr) {
+	char pIndex = 0;
+	char arrIndex = 0;
+	for (char i = 0; i < SW_L; i++) {
 		gpio_put(sw_out[i], 0);
+		for (char j = 0; j < SW_L; j++) {
+			if ( !gpio_get(sw_in[j]) ) 
+				pinArr[arrIndex++] = pIndex;
+			++pIndex;
+		}
+		gpio_put(sw_out[i], 1);
 	}
-	//printf("%d\n", depCount);
-	return coords;
+	return pinArr;
+}
+
+void writeLED (char ledIndex, char writeVal) {
+	pwm_set_clkdiv_int_frac (led_sl[ledIndex], 38, 3);
+	pwm_set_wrap (led_sl[ledIndex], pwm_wrap);
+	pwm_set_chan_level(led_sl[ledIndex], led_ch[ledIndex], (int)((float)pwm_wrap*pwm_duty[writeVal-1]));
+}
+
+void blinkClk () {
+	gpio_put(led_clk, 1);
+	sleep_ms(200);
+	gpio_put(led_clk, 0);
+	sleep_ms(200);
+}
+
+void writePWM (char writeVal) {
+	blinkClk();
+	char halfNyb;
+	for (char i = 0; i < LEDNUM; i++) {
+		halfNyb = writeVal >> (2*i)&3;
+		if (halfNyb) {
+			writeLED(i, halfNyb);
+			pwm_set_enabled(led_sl[i], true);
+		}
+		printf("%x\t", halfNyb);
+	}
+	printf("\n");
+	sleep_ms(400);
+	for (char i = 0; i < LEDNUM; i++) pwm_set_enabled(led_sl[i], false);
+	blinkClk();
 }
 
 void main(void) {
 	stdio_init_all();
 	init_pins();
-	int pwm_wrap = 65465;
-	float pwm_duty = 0.25;
 	//declare array & allocate space
-	short *coords = malloc(SW_L * 2 * sizeof(short));
+	char *pinArr = malloc(SW_L * 2 * sizeof(char));
+	/*while (true) { 
+		writeLED (0, 1);
+		writeLED (1, 2);
+		writeLED (2, 3);
+	}*/
+	writePWM(0x1b);
 	while (true) {
 		//remove contents of array
-		for (short i = 0; i < SW_L*2; i++) coords[i] = -1;
-		coords = poll_sw(coords);
-		/*for (int i = 0; i < SW_L; i++) {
-			if ( coords[i] != -1) {
-				printf("X%d: %d\t", i, coords[i]);
-				printf("Y%d: %d\n", i, coords[i+SW_L]);
-			}
-		}*/
-		printf("\n");
-		for (short i = 0; i < LEDNUM-1; i++) {
-			pwm_set_clkdiv(led_sl[i], 38.1875);
-			pwm_set_wrap (led_sl[i], pwm_wrap);
-			pwm_set_gpio_level(led[i], (int)((float)pwm_wrap*pwm_duty));
-			pwm_set_enabled(led_sl[i], true);
-			printf("%f\t", pwm_duty);
-			//pwm_duty += 0.25;
+		for (char i = 0; pinArr[i] != 255; i++) pinArr[i] = 255;
+		pinArr = poll_sw(pinArr);
+		for (char i = 0; pinArr[i] != 255; i++) {
+			//if ( pinArr[i] != 255) {
+			printf("%d: %d\n", i, pinArr[i]);
+			writePWM(pinArr[i]);
+			//}
 		}
-		printf("\n");
-		pwm_duty = 0.25;
-		//gpio_put(led_clk, 1);
-		gpio_put(led[2], 1);
-		gpio_put(LED_PIN, 1);
-		//for (int i = 0; i < LEDNUM; i++) gpio_put(led[i], 1);
-		sleep_ms(250);
-		//for (int i = 0; i < LEDNUM; i++) gpio_put(led[i], 0);
-		for (short i = 0; i < LEDNUM; i++) pwm_set_enabled(led_sl[0], false);
-		//gpio_put(LED_PIN, 0);
-		gpio_put(led_clk, 0);
-		sleep_ms(250);
+		//for (unsigned char i = 0; i < LEDNUM; i++) pwm_set_enabled(led_sl[0], false);
 	}
 }
