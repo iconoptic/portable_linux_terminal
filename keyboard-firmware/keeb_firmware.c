@@ -10,15 +10,16 @@
 #define LEDNUM 3
 #define SW_L 8
 
+//
+volatile uint32_t clk_term_t = 0;
+
 // PWM
-const float pwm_freq = 10.0;
+const float pwm_freq = 1;
 const int pwm_T_us = (int)((1.0 / pwm_freq) * 1000000.0); 
 static int pwm_wrap;
 static int pwm_level[4];
 
 // LED
-const char LED_PIN = PICO_DEFAULT_LED_PIN;
-
 //define led clock pin
 const char led_clk = 27;
 static char clk_sl, clk_ch;
@@ -33,6 +34,7 @@ const char led[LEDNUM] = {
 char led_ch[LEDNUM];
 char led_sl[LEDNUM];
 
+// SWITCH ARRAY
 //define pins used transmit (pico -> switch array)
 const char sw_out[SW_L] = {
 	8,	//Y0
@@ -69,10 +71,17 @@ void init_pins() {
 }
 
 void configPWM () {
+	//clock slice and channel
+	clk_sl = pwm_gpio_to_slice_num(led_clk);
+	clk_ch = pwm_gpio_to_channel(led_clk);
+
 	//calculate divder and wrap
 	float clkFreq = 125000000.0;
 	double divider = (clkFreq / (4096.0 * pwm_freq))/16.0;
 	pwm_wrap = (int)(clkFreq / divider / pwm_freq - 1.0);
+
+	printf("\nDivider = %f\tpwm_wrap = %d\n", divider, pwm_wrap);
+
 	float duty = 0.0;
 
 	//Calculate level for each duty
@@ -83,8 +92,9 @@ void configPWM () {
 
 	//clk
 	gpio_set_function(led_clk, GPIO_FUNC_PWM);
-	clk_sl = pwm_gpio_to_slice_num(led_clk);
-	clk_ch = pwm_gpio_to_channel(led_clk);
+	pwm_set_clkdiv(clk_sl, divider);
+	pwm_set_wrap(clk_sl, pwm_wrap);
+	pwm_set_chan_level(clk_sl, clk_ch, pwm_level[2]);
 
 	//tx LEDs
 	for (char i = 0; i < LEDNUM; i++) {
@@ -95,6 +105,7 @@ void configPWM () {
 		//set pwm clock divider and wrap value
 		pwm_set_clkdiv(led_sl[i], divider);
 		pwm_set_wrap(led_sl[i], pwm_wrap);
+		pwm_set_output_polarity(led_sl[i], true, true);
 	}
 }
 
@@ -113,18 +124,31 @@ char *poll_sw(char *pinArr) {
 	return pinArr;
 }
 
+int64_t clrLEDs (alarm_id_t id, void *user_data) {
+	for (char i = 0; i < LEDNUM; i++)
+		pwm_set_enabled(led_sl[i], false);
+	return 0;
+}
+
 void writeLED (char ledIndex, char writeVal) {
 	pwm_set_chan_level(led_sl[ledIndex], led_ch[ledIndex], pwm_level[writeVal]);
 	printf("%d\n", pwm_level[writeVal]);
 }
 
-void blinkClk() {
-	pwm_set_chan_level(clk_sl, clk_ch, pwm_level[2]);
-	add_alarm_in_us(pwm_T_us, 
+void clrClk () { //(alarm_id_t id, void *user_data) {
+	pwm_set_enabled(clk_sl, false);
+	printf("after T\n");
+	clk_term_t = 0;
+}
+
+void setClk() {
+	pwm_set_enabled(clk_sl, true);
+	clk_term_t = time_us_32() + (pwm_T_us*16);
+	printf("%d\n", clk_term_t);
+	//return add_alarm_in_us(pwm_T_us, clrClk, NULL, false);
 }
 
 void writePWM (char writeVal) {
-	blinkClk();
 	char halfNyb;
 	for (char i = 0; i < LEDNUM; i++) {
 		halfNyb = writeVal >> (2*i)&3;
@@ -137,9 +161,7 @@ void writePWM (char writeVal) {
 	printf("\n");
 	sleep_ms(400);
 	for (char i = 0; i < LEDNUM; i++) pwm_set_enabled(led_sl[i], false);
-	blinkClk();
 }
-
 
 void main(void) {
 	stdio_init_all();
@@ -148,12 +170,24 @@ void main(void) {
 	//declare array & allocate space
 	char *pinArr = malloc(SW_L * 2 * sizeof(char));
 
-	printf("%d\n", pwm_T_us);
+	printf("T = %dus\n", pwm_T_us);
 
+	setClk();
+
+
+
+	/*add_alarm_in_us(pwm_T_us, clrLEDs, NULL, false);
 	for (char i = 0; i < LEDNUM; i++) {
 		writeLED(i, i+1);
 		pwm_set_enabled(led_sl[i], true);
+	}*/
+
+	while (true) {
+		if (time_us_32() < clk_term_t )
+			clrClk();
 	}
+	//sleep_us(pwm_T_us/4.0);
+	//for (char i = 0; i < LEDNUM; i++) pwm_set_enabled(led_sl[i], false);
 	//writePWM(0x1b);
 	/*while (true) {
 		//remove contents of array
