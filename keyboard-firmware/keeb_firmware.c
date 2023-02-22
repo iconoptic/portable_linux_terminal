@@ -5,10 +5,13 @@
 #include <stdlib.h>
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
-#include "hardware/pwm.h"
+#include "hardware/timer.h"
+#include "hardware/irq.h"
 
 #define LEDNUM 3
 #define SW_L 8
+
+#define ALRM_ID 0
 
 //
 volatile uint32_t clk_term_t = 0;
@@ -19,9 +22,17 @@ volatile bool tx_en = false;
 
 volatile char led_bits[LEDNUM];
 
+volatile uint32_t led_duty[LEDNUM];
+
 // PWM
-const float pwm_freq = 5;
-const int pwm_T_us = (int)(1000000.0 / pwm_freq); 
+const int pwm_freq = 1;
+const int pwm_T_us = (int)(1000000.0 / (float)pwm_freq);
+const uint32_t pwm_duties[] = {
+	0,
+	(uint32_t)((float)pwm_T_us*0.25),
+	(uint32_t)((float)pwm_T_us*0.5), 
+	(uint32_t)((float)pwm_T_us*0.75)
+};
 static int pwm_wrap;
 static int pwm_level[4];
 
@@ -65,9 +76,6 @@ const char sw_in[SW_L] = {
 	16	//X7
 };
 
-void setClk();
-void clrClk();
-
 void init_pins() {
 	//Init switch pins
 	for (char i = 0; i < SW_L; i++) {
@@ -77,44 +85,16 @@ void init_pins() {
 		gpio_set_dir(sw_in[i], GPIO_IN);
 		gpio_put(sw_out[i], 1);
 	}
-}
-
-void configPWM () {
-	//clock slice and channel
-	clk_sl = pwm_gpio_to_slice_num(led_clk);
-	clk_ch = pwm_gpio_to_channel(led_clk);
-
-	//calculate divder and wrap
-	float clkFreq = 125000000.0;
-	double divider = (clkFreq / (4096.0 * pwm_freq))/16.0;
-	pwm_wrap = (int)(clkFreq / divider / pwm_freq - 1.0);
-
-	printf("\nDivider = %f\tpwm_wrap = %d\n", divider, pwm_wrap);
-
-	float duty = 0.0;
-
-	//Calculate level for each duty
-	for (char i = 0; i < sizeof pwm_level / sizeof pwm_level[0]; i++) {
-		pwm_level[i] = (int)((float)pwm_wrap*duty);
-		duty += 0.25;
-	}
 
 	//clk
-	gpio_set_function(led_clk, GPIO_FUNC_PWM);
-	pwm_set_clkdiv(clk_sl, divider);
-	pwm_set_wrap(clk_sl, pwm_wrap);
-	pwm_set_chan_level(clk_sl, clk_ch, pwm_level[1]);
+	gpio_init(led_clk);
+	gpio_set_dir(led_clk, GPIO_OUT);
 
-	//tx LEDs
+	//leds
 	for (char i = 0; i < LEDNUM; i++) {
-		gpio_set_function(led[i], GPIO_FUNC_PWM);
-		led_sl[i] = pwm_gpio_to_slice_num(led[i]);
-		led_ch[i] = pwm_gpio_to_channel(led[i]);
-
-		//set pwm clock divider and wrap value
-		pwm_set_clkdiv(led_sl[i], divider);
-		pwm_set_wrap(led_sl[i], pwm_wrap);
-		pwm_set_output_polarity(led_sl[i], true, true);
+		gpio_init(led[i]);
+		gpio_set_dir(led[i], GPIO_OUT);
+		gpio_put(led[i], 1);
 	}
 }
 
@@ -133,38 +113,103 @@ char *poll_sw(char *pinArr) {
 	return pinArr;
 }
 
-void clrLEDs () {
-	for (char i = 0; i < LEDNUM; i++) pwm_set_enabled(led_sl[i], false);
-	//setClk();
-	tx_en = false;
-}
+volatile char armed_mask;
+void setClk();
 
-void writeLED (char ledIndex) {
-	pwm_set_chan_level(led_sl[ledIndex], led_ch[ledIndex], pwm_level[led_bits[ledIndex]]);
-	pwm_set_enabled(led_sl[ledIndex], true);
-}
-
-void clrClk () { //(alarm_id_t id, void *user_data) {
-	pwm_set_enabled(clk_sl, false);
-	clk_en = false; 
-	//printf("%d\n", time_us_32());
-	clk_term_t = 0;
-	if (!tx_en) {
-		tx_en = true;
-		for (char i = 0; i < LEDNUM; i++) writeLED(i);
-		tx_term_t = time_us_32() + pwm_T_us;
+void led_irq () {
+	for (char i = 0; i < LEDNUM; i++) {
+		if ( !((timer_hw->armed >> i) & 1) && ((armed_mask >> i) & 1)) {
+			hw_clear_bits(&timer_hw->intr, 1 << i);
+			irq_remove_handler(i, led_irq);
+			gpio_put(led[i], 1);
+		}
 	}
 }
 
+void led_T_irq () {
+	hw_clear_bits(&timer_hw->intr, 1 << 3);
+	irq_remove_handler(TIMER_IRQ_3, led_T_irq);
+	tx_en = false;
+	setClk();
+	//printf("%d", timer_hw->armed);
+}
+
+void led_alarm (char i) {
+	uint32_t delay, ledTarget;
+
+	hw_set_bits(&timer_hw->inte, 1 << i);
+	irq_set_exclusive_handler(i, led_irq);
+	irq_set_enabled(i, true);
+	delay = (uint32_t)(led_duty[i]);
+	ledTarget = timer_hw->timerawl + delay;
+	timer_hw->alarm[i] = ledTarget;
+
+}
+
+void led_T_alarm () {
+	//remove alarm 3 handler, else there'll be a kernel panic
+	irq_remove_handler(3, irq_get_exclusive_handler(3));
+	
+	hw_set_bits(&timer_hw->inte, 1 << 3);
+	irq_set_exclusive_handler(TIMER_IRQ_3, led_T_irq);
+	irq_set_enabled(3, true);
+	uint32_t pwm_T_Target = timer_hw->timerawl + pwm_T_us;
+	timer_hw->alarm[3] = pwm_T_Target;
+	armed_mask = timer_hw->armed;
+}
+
+void setLEDs () {
+	for (char i = 0; i < LEDNUM; i++)
+		if (led_bits[i]) {
+			gpio_put(led[i], 0);
+			led_duty[i] = pwm_duties[led_bits[i]];
+			led_alarm(i);
+		}
+	led_T_alarm();
+}
+
+void clk_T_irq () {
+	//clear interrupt bits for alarm 0
+	hw_clear_bits(&timer_hw->intr, 1 << 0);
+	irq_remove_handler(TIMER_IRQ_0, clk_T_irq);
+	gpio_put(led_clk, 0);
+}
+
+volatile int tStart;
+
+void clk_irq () {
+	hw_clear_bits(&timer_hw->intr, 1 << 1);
+	irq_remove_handler(TIMER_IRQ_1, clk_irq);
+	printf("%d\n", time_us_32()-tStart);
+	if (tx_en) setLEDs();
+}
+
+
+void clk_alarm () {
+	//enable interrupt for alarm 0 (disable led)
+	hw_set_bits(&timer_hw->inte, 1 << 0);
+	irq_set_exclusive_handler(TIMER_IRQ_0, clk_T_irq);
+	irq_set_enabled(TIMER_IRQ_0, true);
+	uint32_t delay = (uint32_t)((float)pwm_T_us*0.5);
+	uint32_t ledTarget = timer_hw->timerawl + delay;
+
+	hw_set_bits(&timer_hw->inte, 1 << 1);
+	irq_set_exclusive_handler(TIMER_IRQ_1, clk_irq);
+	irq_set_enabled(TIMER_IRQ_1, true);
+	uint32_t endTarget = timer_hw->timerawl + pwm_T_us;
+
+	timer_hw->alarm[0] = ledTarget;
+	timer_hw->alarm[1] = endTarget;
+	tStart = time_us_32();
+}
+
 void setClk() {
-	clk_en = true;
-	pwm_set_enabled(clk_sl, true);
-	clk_term_t = time_us_32() + (pwm_T_us);
-	printf("%d\n", clk_term_t);
-	//return add_alarm_in_us(pwm_T_us, clrClk, NULL, false);
+	gpio_put(led_clk, 1);
+	clk_alarm();
 }
 
 void writePWM (char writeVal) {
+	tx_en = true;
 	for (char i = 0; i < LEDNUM; i++) 
 		led_bits[i] = writeVal >> (2*i)&3;
 	setClk();
@@ -173,11 +218,12 @@ void writePWM (char writeVal) {
 void main(void) {
 	stdio_init_all();
 	init_pins();
-	configPWM();
 	//declare array & allocate space
 	char *pinArr = malloc(SW_L * 2 * sizeof(char));
 	//initial delay to prevent timing errors
 	sleep_ms(500);
+
+	printf("\nRESET!\n");
 
 	while (true) {
 		//remove contents of array
@@ -188,9 +234,7 @@ void main(void) {
 			writePWM(pinArr[i]);
 			break;
 		}
-		
-		if (clk_en && time_us_32() >= clk_term_t ) clrClk();
-		else if (tx_en && time_us_32() >= tx_term_t ) clrLEDs();
+
 	}
 }
 
