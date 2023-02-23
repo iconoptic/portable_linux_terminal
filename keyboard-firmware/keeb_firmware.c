@@ -120,7 +120,6 @@ void led_irq () {
 	for (char i = 0; i < LEDNUM; i++) {
 		if ( !((timer_hw->armed >> i) & 1) && ((armed_mask >> i) & 1)) {
 			hw_clear_bits(&timer_hw->intr, 1 << i);
-			irq_remove_handler(i, led_irq);
 			gpio_put(led[i], 1);
 		}
 	}
@@ -128,7 +127,6 @@ void led_irq () {
 
 void led_T_irq () {
 	hw_clear_bits(&timer_hw->intr, 1 << 3);
-	irq_remove_handler(TIMER_IRQ_3, led_T_irq);
 	tx_en = false;
 	setClk();
 	//printf("%d", timer_hw->armed);
@@ -136,6 +134,8 @@ void led_T_irq () {
 
 void led_alarm (char i) {
 	uint32_t delay, ledTarget;
+
+	irq_remove_handler(i, irq_get_exclusive_handler(i));
 
 	hw_set_bits(&timer_hw->inte, 1 << i);
 	irq_set_exclusive_handler(i, led_irq);
@@ -147,7 +147,6 @@ void led_alarm (char i) {
 }
 
 void led_T_alarm () {
-	//remove alarm 3 handler, else there'll be a kernel panic
 	irq_remove_handler(3, irq_get_exclusive_handler(3));
 	
 	hw_set_bits(&timer_hw->inte, 1 << 3);
@@ -171,7 +170,6 @@ void setLEDs () {
 void clk_T_irq () {
 	//clear interrupt bits for alarm 0
 	hw_clear_bits(&timer_hw->intr, 1 << 0);
-	irq_remove_handler(TIMER_IRQ_0, clk_T_irq);
 	gpio_put(led_clk, 0);
 }
 
@@ -179,20 +177,22 @@ volatile int tStart;
 
 void clk_irq () {
 	hw_clear_bits(&timer_hw->intr, 1 << 1);
-	irq_remove_handler(TIMER_IRQ_1, clk_irq);
 	printf("%d\n", time_us_32()-tStart);
 	if (tx_en) setLEDs();
 }
 
 
 void clk_alarm () {
+	irq_remove_handler(0, irq_get_exclusive_handler(0));
 	//enable interrupt for alarm 0 (disable led)
 	hw_set_bits(&timer_hw->inte, 1 << 0);
-	irq_set_exclusive_handler(TIMER_IRQ_0, clk_T_irq);
-	irq_set_enabled(TIMER_IRQ_0, true);
+	irq_set_exclusive_handler(0, clk_T_irq);
+	irq_set_enabled(0, true);
 	uint32_t delay = (uint32_t)((float)pwm_T_us*0.5);
 	uint32_t ledTarget = timer_hw->timerawl + delay;
 
+	irq_remove_handler(1, irq_get_exclusive_handler(1));
+	
 	hw_set_bits(&timer_hw->inte, 1 << 1);
 	irq_set_exclusive_handler(TIMER_IRQ_1, clk_irq);
 	irq_set_enabled(TIMER_IRQ_1, true);
