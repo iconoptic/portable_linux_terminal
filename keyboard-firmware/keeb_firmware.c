@@ -11,8 +11,6 @@
 #define LEDNUM 3
 #define SW_L 8
 
-#define ALRM_ID 0
-
 //
 volatile uint32_t clk_term_t = 0;
 volatile bool clk_en = false;
@@ -25,10 +23,9 @@ volatile char led_bits[LEDNUM];
 volatile uint32_t led_duty[LEDNUM];
 
 // PWM
-const int pwm_freq = 1;
+const int pwm_freq = 5;
 const int pwm_T_us = (int)(1000000.0 / (float)pwm_freq);
 const uint32_t pwm_duties[] = {
-	0,
 	(uint32_t)((float)pwm_T_us*0.25),
 	(uint32_t)((float)pwm_T_us*0.5), 
 	(uint32_t)((float)pwm_T_us*0.75)
@@ -103,9 +100,17 @@ char *poll_sw(char *pinArr) {
 	char arrIndex = 0;
 	for (char i = 0; i < SW_L; i++) {
 		gpio_put(sw_out[i], 0);
+		//mysterious 1us delay
+		busy_wait_us_32(1);
 		for (char j = 0; j < SW_L; j++) {
-			if ( !gpio_get(sw_in[j]) ) 
-				pinArr[arrIndex++] = pIndex;
+			if ( !gpio_get(sw_in[j]) ) {
+				busy_wait_us_32(20000);
+				if (!gpio_get(sw_in[j])) {
+					pinArr[arrIndex++] = pIndex;
+					printf("%d:\t%d, %d\n", pIndex, j, i);
+				}
+					
+			}
 			++pIndex;
 		}
 		gpio_put(sw_out[i], 1);
@@ -161,13 +166,13 @@ void setLEDs () {
 	for (char i = 0; i < LEDNUM; i++)
 		if (led_bits[i]) {
 			gpio_put(led[i], 0);
-			led_duty[i] = pwm_duties[led_bits[i]];
+			led_duty[i] = pwm_duties[led_bits[i]-1];
 			led_alarm(i);
 		}
 	led_T_alarm();
 }
 
-void clk_T_irq () {
+void clk_irq () {
 	//clear interrupt bits for alarm 0
 	hw_clear_bits(&timer_hw->intr, 1 << 0);
 	gpio_put(led_clk, 0);
@@ -175,10 +180,11 @@ void clk_T_irq () {
 
 volatile int tStart;
 
-void clk_irq () {
+void clk_T_irq () {
 	hw_clear_bits(&timer_hw->intr, 1 << 1);
 	printf("%d\n", time_us_32()-tStart);
 	if (tx_en) setLEDs();
+	clk_en = false;
 }
 
 
@@ -186,15 +192,15 @@ void clk_alarm () {
 	irq_remove_handler(0, irq_get_exclusive_handler(0));
 	//enable interrupt for alarm 0 (disable led)
 	hw_set_bits(&timer_hw->inte, 1 << 0);
-	irq_set_exclusive_handler(0, clk_T_irq);
+	irq_set_exclusive_handler(0, clk_irq);
 	irq_set_enabled(0, true);
-	uint32_t delay = (uint32_t)((float)pwm_T_us*0.5);
-	uint32_t ledTarget = timer_hw->timerawl + delay;
+	//clock has 50% duty
+	uint32_t ledTarget = timer_hw->timerawl + pwm_duties[1];
 
 	irq_remove_handler(1, irq_get_exclusive_handler(1));
 	
 	hw_set_bits(&timer_hw->inte, 1 << 1);
-	irq_set_exclusive_handler(TIMER_IRQ_1, clk_irq);
+	irq_set_exclusive_handler(TIMER_IRQ_1, clk_T_irq);
 	irq_set_enabled(TIMER_IRQ_1, true);
 	uint32_t endTarget = timer_hw->timerawl + pwm_T_us;
 
@@ -204,6 +210,7 @@ void clk_alarm () {
 }
 
 void setClk() {
+	clk_en = true;
 	gpio_put(led_clk, 1);
 	clk_alarm();
 }
@@ -231,7 +238,7 @@ void main(void) {
 		pinArr = poll_sw(pinArr);
 
 		for (char i = 0; pinArr[i] != 255; i++) {
-			writePWM(pinArr[i]);
+			if (!tx_en && !clk_en) writePWM(pinArr[i]);
 			break;
 		}
 
