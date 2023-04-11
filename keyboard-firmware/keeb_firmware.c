@@ -22,8 +22,12 @@ volatile char led_bits[LEDNUM];
 
 volatile uint32_t led_duty[LEDNUM];
 
+
+volatile signed char arrEnd = -1;
+volatile char txLen = 0;
+
 // PWM
-const int pwm_freq = 20;
+const int pwm_freq = 1;
 const int pwm_T_us = (int)(1000000.0 / (float)pwm_freq);
 const uint32_t pwm_duties[] = {
 	(uint32_t)((float)pwm_T_us*0.25),
@@ -98,7 +102,6 @@ void init_pins() {
 
 char *poll_sw(char *pinArr) {
 	char pIndex = 0;
-	char arrIndex = 0;
 	for (char i = 0; i < SW_L; i++) {
 		gpio_put(sw_out[i], 1);
 		//mysterious 1us delay
@@ -107,10 +110,9 @@ char *poll_sw(char *pinArr) {
 			if ( gpio_get(sw_in[j]) ) {
 				busy_wait_us_32(20000);
 				if ( gpio_get(sw_in[j]) ) {
-					pinArr[arrIndex++] = pIndex;
+					pinArr[++arrEnd] = pIndex;
 					printf("0x%x:\t%d, %d\n", pIndex, j, i);
 				}
-					
 			}
 			++pIndex;
 		}
@@ -134,7 +136,7 @@ void led_irq () {
 void led_T_irq () {
 	hw_clear_bits(&timer_hw->intr, 1 << 3);
 	tx_en = false;
-	setClk();
+	if (arrEnd == 0) setClk();
 	//printf("%d", timer_hw->armed);
 }
 
@@ -220,7 +222,17 @@ void writePWM (char writeVal) {
 	tx_en = true;
 	for (char i = 0; i < LEDNUM; i++) 
 		led_bits[i] = writeVal >> (2*i) & 3;
-	setClk();
+
+	//Change clock behavior based on array size/location
+	if (txLen == arrEnd) setClk();
+	else setLEDs();
+}
+
+char *shiftL (char *pinArr) {
+	for (char i = 0; pinArr[i+1] != 255; i++) {
+		pinArr[i] = pinArr[i+1];
+	}
+	return pinArr;
 }
 
 void main(void) {
@@ -235,14 +247,23 @@ void main(void) {
 
 	while (true) {
 		//remove contents of array
-		for (char i = 0; pinArr[i] != 255; i++) pinArr[i] = 255;
-		pinArr = poll_sw(pinArr);
-
-		for (char i = 0; pinArr[i] != 255; i++) {
-			if (!tx_en && !clk_en) writePWM(pinArr[i]);
-			break;
+		if (arrEnd == -1) {
+			for (char i = 0; pinArr[i] != 255; i++) pinArr[i] = 255;
+			pinArr = poll_sw(pinArr);
+			txLen = arrEnd;
 		}
 
+		if (arrEnd > -1 && !tx_en && !clk_en) {
+			switch (arrEnd) {
+				case 0: writePWM(pinArr[0]);
+					--arrEnd;
+					break;
+
+				default:writePWM(pinArr[0]);
+					pinArr = shiftL(pinArr);
+					--arrEnd;
+			}
+		}
 	}
 }
 
