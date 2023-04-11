@@ -23,7 +23,7 @@ volatile char led_bits[LEDNUM];
 volatile uint32_t led_duty[LEDNUM];
 
 // PWM
-const int pwm_freq = 5;
+const int pwm_freq = 20;
 const int pwm_T_us = (int)(1000000.0 / (float)pwm_freq);
 const uint32_t pwm_duties[] = {
 	(uint32_t)((float)pwm_T_us*0.25),
@@ -42,7 +42,7 @@ static char clk_sl, clk_ch;
 const char led[LEDNUM] = {
 	7,	//LED_R
 	6,	//LED_G
-	5	//LED_B
+	28	//LED_B
 };
 //arrays to store led slices/channels
 char led_ch[LEDNUM];
@@ -50,27 +50,27 @@ char led_sl[LEDNUM];
 
 // SWITCH ARRAY
 //define pins used transmit (pico -> switch array)
-const char sw_out[SW_L] = {
+const char sw_in[SW_L] = {
 	8,	//Y0
 	9,	//Y1
 	10,	//Y2
 	11,	//Y3
-	26,	//Y4
-	22,	//Y5
-	21,	//Y6
-	20	//Y7
+	20,	//Y4
+	21,	//Y5
+	22,	//Y6
+	26	//Y7
 };
 
 //define pins used to receive (switch array -> pico)
-const char sw_in[SW_L] = {
-	12,	//X0
-	13,	//X1
-	14,	//X2
-	15,	//X3
-	19,	//X4
-	18,	//X5
-	17,	//X6
-	16	//X7
+const char sw_out[SW_L] = {
+	15,	//X0
+	14,	//X1
+	13,	//X2
+	12,	//X3
+	16,	//X4
+	17,	//X5
+	18,	//X6
+	19	//X7
 };
 
 void init_pins() {
@@ -80,12 +80,13 @@ void init_pins() {
 		gpio_init(sw_in[i]);
 		gpio_set_dir(sw_out[i], GPIO_OUT);
 		gpio_set_dir(sw_in[i], GPIO_IN);
-		gpio_put(sw_out[i], 1);
+		gpio_put(sw_out[i], 0);
 	}
 
 	//clk
 	gpio_init(led_clk);
 	gpio_set_dir(led_clk, GPIO_OUT);
+	gpio_put(led_clk, 1);
 
 	//leds
 	for (char i = 0; i < LEDNUM; i++) {
@@ -99,21 +100,21 @@ char *poll_sw(char *pinArr) {
 	char pIndex = 0;
 	char arrIndex = 0;
 	for (char i = 0; i < SW_L; i++) {
-		gpio_put(sw_out[i], 0);
+		gpio_put(sw_out[i], 1);
 		//mysterious 1us delay
 		busy_wait_us_32(1);
 		for (char j = 0; j < SW_L; j++) {
-			if ( !gpio_get(sw_in[j]) ) {
+			if ( gpio_get(sw_in[j]) ) {
 				busy_wait_us_32(20000);
-				if (!gpio_get(sw_in[j])) {
+				if ( gpio_get(sw_in[j]) ) {
 					pinArr[arrIndex++] = pIndex;
-					printf("%d:\t%d, %d\n", pIndex, j, i);
+					printf("0x%x:\t%d, %d\n", pIndex, j, i);
 				}
 					
 			}
 			++pIndex;
 		}
-		gpio_put(sw_out[i], 1);
+		gpio_put(sw_out[i], 0);
 	}
 	return pinArr;
 }
@@ -175,7 +176,7 @@ void setLEDs () {
 void clk_irq () {
 	//clear interrupt bits for alarm 0
 	hw_clear_bits(&timer_hw->intr, 1 << 0);
-	gpio_put(led_clk, 0);
+	gpio_put(led_clk, 1);
 }
 
 volatile int tStart;
@@ -211,14 +212,14 @@ void clk_alarm () {
 
 void setClk() {
 	clk_en = true;
-	gpio_put(led_clk, 1);
+	gpio_put(led_clk, 0);
 	clk_alarm();
 }
 
 void writePWM (char writeVal) {
 	tx_en = true;
 	for (char i = 0; i < LEDNUM; i++) 
-		led_bits[i] = writeVal >> (2*i)&3;
+		led_bits[i] = writeVal >> (2*i) & 3;
 	setClk();
 }
 
