@@ -14,8 +14,8 @@ add_executable(keeb_firmware
 target_link_libraries(keeb_firmware pico_stdlib hardware_gpio hardware_timer hardware_irq)
 
 #enable uart; disable usb (printf)
-#pico_enable_stdio_usb(keeb_firmware 1)
-#pico_enable_stdio_uart(keeb_firmware 1)
+pico_enable_stdio_usb(keeb_firmware 1)
+pico_enable_stdio_uart(keeb_firmware 0)
 
 # create map/bin/hex file etc.
 pico_add_extra_outputs(keeb_firmware)

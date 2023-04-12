@@ -23,11 +23,11 @@ volatile char led_bits[LEDNUM];
 volatile uint32_t led_duty[LEDNUM];
 
 
-volatile signed char arrEnd = -1;
-volatile char txLen = 0;
+volatile int32_t arrI;
+volatile int32_t txLen = 0;
 
 // PWM
-const int pwm_freq = 1;
+const int pwm_freq = 20;
 const int pwm_T_us = (int)(1000000.0 / (float)pwm_freq);
 const uint32_t pwm_duties[] = {
 	(uint32_t)((float)pwm_T_us*0.25),
@@ -40,7 +40,6 @@ static int pwm_level[4];
 // LED
 //define led clock pin
 const char led_clk = 27;
-static char clk_sl, clk_ch;
 
 //define array of LED pins
 const char led[LEDNUM] = {
@@ -48,12 +47,9 @@ const char led[LEDNUM] = {
 	6,	//LED_G
 	28	//LED_B
 };
-//arrays to store led slices/channels
-char led_ch[LEDNUM];
-char led_sl[LEDNUM];
 
 // SWITCH ARRAY
-//define pins used transmit (pico -> switch array)
+//define pins used to receive (switch array -> pico)
 const char sw_in[SW_L] = {
 	8,	//Y0
 	9,	//Y1
@@ -65,7 +61,7 @@ const char sw_in[SW_L] = {
 	26	//Y7
 };
 
-//define pins used to receive (switch array -> pico)
+//define pins used transmit (pico -> switch array)
 const char sw_out[SW_L] = {
 	15,	//X0
 	14,	//X1
@@ -108,10 +104,11 @@ char *poll_sw(char *pinArr) {
 		busy_wait_us_32(1);
 		for (char j = 0; j < SW_L; j++) {
 			if ( gpio_get(sw_in[j]) ) {
+				//debounce
 				busy_wait_us_32(20000);
 				if ( gpio_get(sw_in[j]) ) {
-					pinArr[++arrEnd] = pIndex;
-					printf("0x%x:\t%d, %d\n", pIndex, j, i);
+					pinArr[txLen++] = pIndex;
+					//printf("0x%x:\t%d, %d\n", pIndex, j, i);
 				}
 			}
 			++pIndex;
@@ -136,7 +133,9 @@ void led_irq () {
 void led_T_irq () {
 	hw_clear_bits(&timer_hw->intr, 1 << 3);
 	tx_en = false;
-	if (arrEnd == 0) setClk();
+	//printf("arrI: %d\ttxLen: %d\n", arrI, txLen);
+	if (!arrI) setClk();
+	arrI--;
 	//printf("%d", timer_hw->armed);
 }
 
@@ -185,7 +184,7 @@ volatile int tStart;
 
 void clk_T_irq () {
 	hw_clear_bits(&timer_hw->intr, 1 << 1);
-	printf("%d\n", time_us_32()-tStart);
+	//printf("%d\n", time_us_32()-tStart);
 	if (tx_en) setLEDs();
 	clk_en = false;
 }
@@ -224,14 +223,12 @@ void writePWM (char writeVal) {
 		led_bits[i] = writeVal >> (2*i) & 3;
 
 	//Change clock behavior based on array size/location
-	if (txLen == arrEnd) setClk();
+	if (arrI == txLen - 1) setClk();
 	else setLEDs();
 }
 
-char *shiftL (char *pinArr) {
-	for (char i = 0; pinArr[i+1] != 255; i++) {
-		pinArr[i] = pinArr[i+1];
-	}
+char *emptyArr (char *pinArr) {
+	for (char i = 0; pinArr[i] != 255; i++) pinArr[i] = 255;
 	return pinArr;
 }
 
@@ -240,30 +237,26 @@ void main(void) {
 	init_pins();
 	//declare array & allocate space
 	char *pinArr = malloc(SW_L * 2 * sizeof(char));
-	//initial delay to prevent timing errors
-	sleep_ms(500);
+	//Set all indices to 'invalid'
+	pinArr = emptyArr(pinArr);
 
-	printf("\nRESET!\n");
+	//printf("\nRESET!\n");
 
 	while (true) {
 		//remove contents of array
-		if (arrEnd == -1) {
-			for (char i = 0; pinArr[i] != 255; i++) pinArr[i] = 255;
+		if (arrI == -1) {
 			pinArr = poll_sw(pinArr);
-			txLen = arrEnd;
+			arrI = txLen - 1;
 		}
 
-		if (arrEnd > -1 && !tx_en && !clk_en) {
-			switch (arrEnd) {
-				case 0: writePWM(pinArr[0]);
-					--arrEnd;
-					break;
-
-				default:writePWM(pinArr[0]);
-					pinArr = shiftL(pinArr);
-					--arrEnd;
+		if (arrI > -1 && !tx_en && !clk_en) {
+			writePWM(pinArr[arrI]);
+			if (!arrI) {
+				txLen = 0;
+				pinArr = emptyArr(pinArr);
 			}
 		}
 	}
 }
+
 
