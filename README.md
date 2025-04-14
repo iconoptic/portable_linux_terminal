@@ -4,7 +4,7 @@ This project is a **Raspberry Pi-powered cyberdeck** with a **detachable keyboar
 
 ![Prototype Image](prototype.jpg)
 
-## 🔧 Hardware Overview
+## Hardware Overview
 
 - **Main Console**: Raspberry Pi 4, 5" DSI touchscreen, lithium battery + charge regulator.
 - **Keyboard Module**: 
@@ -13,16 +13,6 @@ This project is a **Raspberry Pi-powered cyberdeck** with a **detachable keyboar
   - RGB LEDs for VLC (Color Shift Keying + PWM)
   - White LED sync pulses for timing
   - Photodiode-based receiver on console side
-
-## Architecture
-
-```
-.
-├── keyboard-firmware/     # RP2040 firmware for encoding + LED signaling
-├── vlc_receiver/          # Raspberry Pi 4 code for decoding photodiode signals
-├── media/                 # Schematics, PCB, scope captures
-├── README.md              # This file
-```
 
 ## Engineering Focus
 
