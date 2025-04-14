@@ -14,7 +14,7 @@ This project is a **Raspberry Pi-powered cyberdeck** with a **detachable keyboar
   - White LED sync pulses for timing
   - Photodiode-based receiver on console side
 
-## 📐 Architecture
+## Architecture
 
 ```
 .
@@ -24,7 +24,7 @@ This project is a **Raspberry Pi-powered cyberdeck** with a **detachable keyboar
 ├── README.md              # This file
 ```
 
-## 🧠 Engineering Focus
+## Engineering Focus
 
 - Custom **VLC protocol** using PWM + CSK (color shift keying)
 - Clock synchronization via **white LED pulses**
@@ -33,14 +33,7 @@ This project is a **Raspberry Pi-powered cyberdeck** with a **detachable keyboar
 - Safe aluminum plate-based **power delivery system**
 - **3D printed case** with access to all ports + GPIO expansion
 
-## 📸 Media & Validation
-
-- **Oscilloscope traces** of encoded PWM signal
-- **.lst register maps** of memory layout for firmware
-- Scope captures of sync pulse timing validation
-- Custom **firmware in C++** for the RP2040
-
-## 💡 Technologies & Tools
+## Technologies & Tools
 
 - Embedded C++ (Pico SDK)
 - GPIO + PWM signal generation
@@ -48,10 +41,10 @@ This project is a **Raspberry Pi-powered cyberdeck** with a **detachable keyboar
 - Linux shell scripting + low-level debugging
 - Visible light + photodiode interfacing
 
-## 🧪 Use Case
+## Use Case
 
 This project blends protocol design, real-world electrical engineering, and embedded development. It's a practical and portable proof-of-concept for wireless peripherals that communicate via optical signals, suitable for R&D or educational demonstrations in **embedded comms, optoelectronics, or secure hardware interfaces**.
 
-## 📎 License
+## License
 
 MIT License
