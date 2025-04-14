@@ -6,7 +6,7 @@ This project is a **Raspberry Pi-powered cyberdeck** with a **detachable keyboar
 
 ## 🔧 Hardware Overview
 
-- **Main Console**: Raspberry Pi 4, 5" DSI touchscreen, 3-D printed case, lithium battery + charge regulator.
+- **Main Console**: Raspberry Pi 4, 5" DSI touchscreen, lithium battery + charge regulator.
 - **Keyboard Module**: 
   - Raspberry Pi Pico
   - 64-key matrix with diode-protected rows/columns
