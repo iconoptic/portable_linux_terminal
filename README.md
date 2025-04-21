@@ -1,6 +1,6 @@
 # Portable Linux Terminal with Visible Light Communication Keyboard
 
-This project is a **Raspberry Pi-powered cyberdeck** with a **detachable keyboard that transmits keystrokes using visible light communication (VLC)**. It was designed as a capstone project to explore embedded systems, optical signaling, and hardware-software co-design.
+This project is a **Raspberry Pi-powered cyberdeck** featuring a **detachable keyboard that transmits keystrokes using visible light communication (VLC)**. Built as a senior capstone, it explores embedded systems, optical signaling, and hardware-software co-design.
 
 ![Prototype Image](prototype.jpg)
 
@@ -33,7 +33,7 @@ This project is a **Raspberry Pi-powered cyberdeck** with a **detachable keyboar
 
 ## Use Case
 
-This project blends protocol design, real-world electrical engineering, and embedded development. It's a practical and portable proof-of-concept for wireless peripherals that communicate via optical signals, suitable for R&D or educational demonstrations in **embedded comms, optoelectronics, or secure hardware interfaces**.
+This build merges protocol design, practical EE, and embedded dev into a portable proof-of-concept for **optical wireless peripherals**. Ideal for R&D, teaching tools in **embedded comms**, **optoelectronics**, or **secure hardware interfaces**.
 
 ## License
 
